@@ -47,6 +47,7 @@ class Network:
     def __init__(self):
         self.lr = 0.01 # learning rate
         self.epochs = 100
+        self.batch_size = 64
 
         # Initalise some random weights to start with
         self.w1 = np.random.normal()
@@ -73,15 +74,18 @@ class Network:
         self.h2_value = 0
         self.losses = []
 
+    def set_lr(self, lr):
+        self.lr = lr
+
     def set_epochs(self, epochs):
         self.epochs = epochs
 
     def forward(self, inputs):
-        # inputs is a numpy array with two input features x[0] = gender, x[1] = weight --> predict height
-        self.sum_h1 = self.h1.forward(inputs, activation=None)
+        # Expects inputs to be a shape of (batch_size,2)
+        self.sum_h1 = self.h1.forward(inputs.T, activation=None)
         self.h1_value = sigmoid(self.sum_h1)
 
-        self.sum_h2 = self.h2.forward(inputs, activation=None)
+        self.sum_h2 = self.h2.forward(inputs.T, activation=None)
         self.h2_value = sigmoid(self.sum_h2)
 
         self.sum_o1 = self.o1.forward(np.array([self.h1_value, self.h2_value]), activation=None)
@@ -94,13 +98,16 @@ class Network:
         - all_y_trues is a numpy array with n elements.
         Elements in all_y_trues correspond to those in data.
         """
+        n_batches = int(np.ceil(data.shape[0] / self.batch_size))
 
-        for epoch in range(self.epochs + 1):
-            # Normally we "batch" the input in this case we do one example at a time (not optimal at all)
-            for x, y_true in zip(data, all_y_trues):
+        for epoch in range(self.epochs + 1):            
+            for batch in range(n_batches):
+                batch_start = self.batch_size * batch
+                x = data[batch_start:batch_start+self.batch_size,:]
+                y_true = all_y_trues[batch_start:batch_start+self.batch_size]
+
                 # Forward pass
-                y_pred = self.forward(x)
-
+                y_pred = self.forward(x) # Expects input shape to be (batch_size,2)
                 # Backprop - calculate partial derivatives
                 dL_dypred = -2 * (y_true - y_pred) # Loss = (y_true - y_pred)**2 for a single sample
 
@@ -113,39 +120,39 @@ class Network:
                 d_ypred_d_h2 = self.w6 * dsigmoid(self.sum_o1)
 
                 # Neuron h1
-                d_h1_d_w1 = x[0] * dsigmoid(self.sum_h1)
-                d_h1_d_w2 = x[1] * dsigmoid(self.sum_h1)
+                d_h1_d_w1 = x[:,0] * dsigmoid(self.sum_h1)
+                d_h1_d_w2 = x[:,1] * dsigmoid(self.sum_h1)
                 d_h1_d_b1 = dsigmoid(self.sum_h1)
 
                 # Neuron h2
-                d_h2_d_w3 = x[0] * dsigmoid(self.sum_h2)
-                d_h2_d_w4 = x[1] * dsigmoid(self.sum_h2)
+                d_h2_d_w3 = x[:,0] * dsigmoid(self.sum_h2)
+                d_h2_d_w4 = x[:,1] * dsigmoid(self.sum_h2)
                 d_h2_d_b2 = dsigmoid(self.sum_h2)
 
                 # Update weights and biases
                 # Neuron h1
                 h1w_step = np.array([
-                    self.lr * dL_dypred * d_ypred_d_h1 * d_h1_d_w1,
-                    self.lr * dL_dypred * d_ypred_d_h1 * d_h1_d_w2
+                    self.lr * np.mean(dL_dypred * d_ypred_d_h1 * d_h1_d_w1),
+                    self.lr * np.mean(dL_dypred * d_ypred_d_h1 * d_h1_d_w2)
                 ])
                 self.h1.update_weights(h1w_step)
-                self.h1.update_bias(self.lr * dL_dypred * d_ypred_d_h1 * d_h1_d_b1)
+                self.h1.update_bias(self.lr * np.mean(dL_dypred * d_ypred_d_h1 * d_h1_d_b1))
 
                 # Neuron h2
                 h2w_step = np.array([
-                    self.lr * dL_dypred * d_ypred_d_h2 * d_h2_d_w3,
-                    self.lr * dL_dypred * d_ypred_d_h2 * d_h2_d_w4
+                    self.lr * np.mean(dL_dypred * d_ypred_d_h2 * d_h2_d_w3),
+                    self.lr * np.mean(dL_dypred * d_ypred_d_h2 * d_h2_d_w4)
                 ])
                 self.h2.update_weights(h2w_step)
-                self.h2.update_bias(self.lr * dL_dypred * d_ypred_d_h2 * d_h2_d_b2)
+                self.h2.update_bias(self.lr * np.mean(dL_dypred * d_ypred_d_h2 * d_h2_d_b2))
 
                 # Neuron o1
                 o1w_step = np.array([
-                    self.lr * dL_dypred * d_ypred_d_w5,
-                    self.lr * dL_dypred * d_ypred_d_w6
+                    self.lr * np.mean(dL_dypred * d_ypred_d_w5),
+                    self.lr * np.mean(dL_dypred * d_ypred_d_w6)
                 ])
                 self.o1.update_weights(o1w_step)
-                self.o1.update_bias(self.lr * dL_dypred * d_ypred_d_b3)
+                self.o1.update_bias(self.lr * np.mean(dL_dypred * d_ypred_d_b3))
 
             # Calculate total loss at the end of each epoch
             if epoch % 10 == 0:
@@ -156,8 +163,9 @@ class Network:
 
 
 model = Network()
-n_epochs = 500
+n_epochs = 200
 model.set_epochs(n_epochs)
+model.set_lr(0.1)
 
 # Get training data
 df = pd.read_csv("synthetic_sex_data.csv")
@@ -189,3 +197,9 @@ print(f"Actual height = {first_person['height']}\tPrediction = {pred:.2f} cm")
 
 plt.plot(np.arange(0, n_epochs + 1, 10), model.losses)
 plt.show()
+
+# PROBLEMS:
+# Only processes 1 sample at a time so gradients are likely wrong
+# Non-easily extendable to adding more neurons/layers
+# Custom number of features
+# Weight initalization scheme
